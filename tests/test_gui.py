@@ -66,6 +66,15 @@ def test_every_session_param_has_a_widget(window):
     assert not missing, f"no GUI widget for: {sorted(missing)}"
 
 
+def test_date_field_follows_the_day_when_gui_stays_open(window):
+    from datetime import datetime
+
+    assert window._date_timer.isActive()
+    window.b.widgets["date"].setText("20000101")  # as if the GUI was opened on an earlier day
+    window._refresh_date()
+    assert window.b.widgets["date"].text() == datetime.now().strftime("%Y%m%d")
+
+
 def test_amplitude_range_shows_extra_rows(window):
     w = window.b.widgets
     for prefix, second, flag in (("wh_stim", "wh_stim_amp_mT", "wh_stim_amp_range"),

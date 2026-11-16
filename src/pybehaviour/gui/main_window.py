@@ -220,6 +220,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._event_timer = QtCore.QTimer(self, interval=50, timeout=self._poll_events)
         self._plot_timer = QtCore.QTimer(self, interval=50, timeout=self._update_live_plots)
         self._event_timer.start()
+        # GUI left open overnight: keep the Date field on today's date between sessions
+        self._date_timer = QtCore.QTimer(self, interval=60_000, timeout=self._refresh_date)
+        self._date_timer.start()
+
+    def _refresh_date(self) -> None:
+        """Show today's date, except while a session runs (it keeps the date it started on)."""
+        if self.session is not None and self.session.running:
+            return
+        today = datetime.now().strftime("%Y%m%d")
+        if self.b.widgets["date"].text() != today:
+            self.b.widgets["date"].setText(today)
 
     # --- header ------------------------------------------------------------------
     def _header(self) -> QtWidgets.QWidget:
