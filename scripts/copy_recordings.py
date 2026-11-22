@@ -6,6 +6,7 @@ copied the behaviour session ("Copy today to server"):
 
     python copy_recordings.py                    # today, every mouse found
     python copy_recordings.py --date 20261121 --mouse RD138
+    python copy_recordings.py --check            # only list, copy nothing
 
 Only needs Python 3.8 or newer, no packages: copy this one file to the PC.
 Edit SERVER and SOURCES below once, or give --server / --imaging / --topview / --sideview.
@@ -187,7 +188,20 @@ def show(items: list[Item], server: Path, say=print) -> None:
         if not i.ready:
             say("           changed less than a minute ago (still recording?): not copied")
         elif id(i) in targets:
-            say(f"           goes to {targets[id(i)]}")
+            say(f"           goes to {targets[id(i)]}{on_server(targets[id(i)], i.size)}")
+
+
+def on_server(dst: Path, size: int) -> str:
+    """'' if not there yet, else a note saying it is (and whether the size matches)."""
+    try:
+        if not dst.exists():
+            return ""
+        have = dst.stat().st_size
+    except OSError:
+        return ""
+    if have == size:
+        return "\n           ALREADY ON THE SERVER (same size): will be skipped"
+    return f"\n           ON THE SERVER WITH ANOTHER SIZE ({have} vs {size} bytes): will be left as it is"
 
 
 # --- copying ------------------------------------------------------------------------
@@ -320,6 +334,8 @@ def main(argv: list[str] | None = None, ask=input, say=print, now: float | None 
     for kind in SOURCES:
         ap.add_argument(f"--{kind}", default=SOURCES[kind], help=f"folder holding <mouse>/<date>/ ('' to skip)")
     ap.add_argument("--log", default=str(LOG))
+    ap.add_argument("--check", action="store_true",
+                    help="only list the files, where they go and whether they are already on the server; copy nothing")
     args = ap.parse_args(argv)
     day = args.date
     if not re.fullmatch(r"\d{8}", day):
@@ -342,7 +358,7 @@ def main(argv: list[str] | None = None, ask=input, say=print, now: float | None 
     if not ok_server:
         say("Cannot reach the server. Is the network drive connected?")
         return 1
-    if len(reachable) < len(sources):
+    if len(reachable) < len(sources) and not args.check:
         if ask("Some folders cannot be read. Go on without them? [y/N] ").strip().lower() != "y":
             return 1
 
@@ -370,6 +386,15 @@ def main(argv: list[str] | None = None, ask=input, say=print, now: float | None 
                                               i.kind, i.saved))
     if not items:
         say("Nothing to copy.")
+        return 0
+
+    if args.check:
+        show(items, server, say)
+        todo, errors = plan(items, server)
+        say("")
+        for e in errors:
+            say(f"  ! {e}")
+        say(f"Check only: {len(todo)} file(s) ticked, {size_text(sum(i.size for i, _ in todo))}. Nothing copied.")
         return 0
 
     # 5. choose

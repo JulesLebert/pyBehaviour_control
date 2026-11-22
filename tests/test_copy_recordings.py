@@ -104,6 +104,23 @@ def test_needs_the_behaviour_session_on_the_server(rig, tmp_path):
     assert "RD140: recordings found but no behaviour session" in out and "Nothing to copy." in out
 
 
+def test_check_lists_what_is_already_on_the_server_and_copies_nothing(rig, tmp_path):
+    server, src = rig
+    put(src["top"] / "RD138" / DAY / "cam0.avi", datetime(2026, 11, 21, 10, 50), b"top")
+    put(src["side"] / "RD138" / DAY / "cam1.avi", datetime(2026, 11, 21, 10, 51), b"side")
+    put(src["imaging"] / "RD138" / DAY / "a.tif", datetime(2026, 11, 21, 11, 0), b"tif")
+    video = server / "RD138" / "Recording" / "Video" / NAME
+    video.mkdir(parents=True)
+    (video / f"{NAME}_topview.avi").write_bytes(b"top")  # copied by hand, same file
+    (video / f"{NAME}_sideview.avi").write_bytes(b"si")  # copied by hand, differs
+    code, out = run(server, src, [], tmp_path, extra=["--check"])  # no questions asked
+    assert code == 0 and "Nothing copied." in out
+    assert "ALREADY ON THE SERVER (same size): will be skipped" in out
+    assert "ON THE SERVER WITH ANOTHER SIZE (2 vs 4 bytes)" in out
+    assert not (server / "RD138" / "Recording" / "Imaging").exists()
+    assert not (tmp_path / "log.csv").exists()
+
+
 def test_never_replaces_a_file_on_the_server(rig, tmp_path):
     server, src = rig
     put(src["top"] / "RD138" / DAY / "cam0.avi", datetime(2026, 11, 21, 10, 50), b"top video")
