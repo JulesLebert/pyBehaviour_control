@@ -6,6 +6,7 @@ Logic is in server_copy.py; this window only shows choices and polls the copy jo
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 from typing import Callable, TypeVar
 
@@ -51,6 +52,17 @@ def run_with_wait(parent: QtWidgets.QWidget, text: str, fn: Callable[[], T], sho
     if "error" in out:
         raise out["error"]
     return out["value"]
+
+
+def speed_text(done: int, total: int, elapsed_s: float) -> str:
+    """', 95.0 MB/s, about 1 h 45 min left' once there is enough to measure; else ''."""
+    if elapsed_s < 3 or done <= 0:
+        return ""
+    rate = done / elapsed_s
+    left = max(total - done, 0) / rate
+    h, m = divmod(round(left / 60), 60)
+    eta = f"{h} h {m:02d} min" if h else f"{max(m, 1)} min"
+    return f", {format_size(rate)}/s, about {eta} left"
 
 
 class ServerCopyDialog(QtWidgets.QDialog):
@@ -162,6 +174,7 @@ class ServerCopyDialog(QtWidgets.QDialog):
                 w.setEnabled(False)
         self.close_btn.setText("Cancel")
         self.job = CopyJob(self.chosen(), self.server_dir)
+        self._started = time.monotonic()
         self.job.start()
         self._timer.start()
         self._poll()
@@ -179,7 +192,8 @@ class ServerCopyDialog(QtWidgets.QDialog):
             self.problems.setVisible(True)
             self.problems.setPlainText("\n".join(p.problems))
         if not p.finished:
-            self.status.setText(f"Copying {p.current}  ({format_size(p.done_bytes)} of {format_size(p.total_bytes)})")
+            self.status.setText(f"Copying {p.current}  ({format_size(p.done_bytes)} of {format_size(p.total_bytes)}"
+                                f"{speed_text(p.done_bytes, p.total_bytes, time.monotonic() - self._started)})")
             return
         self._timer.stop()
         self.close_btn.setText("Close")

@@ -181,6 +181,24 @@ already on the server with the same size are skipped, and a file with a
 different size is reported and left as it is (ask the server admin to remove
 it). Cancel stops after the file being copied.
 
+This copies behaviour only. Imaging and videos are copied from the imaging PC
+(fast link) with `scripts/copy_recordings.py`: copy that one file there (it
+needs only Python 3.8+, no packages), set `SERVER` and `SOURCES` at the top,
+and once the behaviour session is on the server run
+`python copy_recordings.py` (or `--date YYYYMMDD --mouse RD138`). It finds the
+session on the server and renames each file after it:
+
+- `*.tif` → `<server>/<mouse>/Recording/Imaging/<session>/<session>.tiff`
+  (several ticked: `<session>_1.tiff`, `_2.tiff`… in the order saved)
+- `*.avi` → `<server>/<mouse>/Recording/Video/<session>/<session>_topview.avi`
+  and `_sideview.avi`
+
+Source folders hold `<mouse>/<YYYYMMDD>/` or `<mouse>/<YYMMDD>/`. A file goes
+with the last session that started before it was last saved. The script lists
+every file with its full destination, lets you tick by number, asks before
+copying, never replaces a file on the server, keeps the PC awake, and logs each
+file to `copy_recordings_log.csv`. Ctrl+C stops after the current file.
+
 ## Using the GUI
 
 Settings are on the left (preset bar and tabs), live signals and performance in the centre,

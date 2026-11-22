@@ -757,6 +757,14 @@ def test_copy_today_to_server_asks_which_session(window, app, tmp_path, monkeypa
     dlg.reject()
 
 
+def test_copy_speed_and_time_left():
+    from pybehaviour.gui.server_dialog import speed_text
+
+    assert speed_text(10**9, 2 * 10**9, 1) == ""  # too early to tell
+    assert speed_text(100 * 10**6 * 60, 600 * 10**9, 60) == ", 100.0 MB/s, about 1 h 39 min left"
+    assert speed_text(99 * 10**6, 100 * 10**6, 10) == ", 9.9 MB/s, about 1 min left"
+
+
 def test_copy_to_server_without_server_directory(window, monkeypatch):
     shown = []
     monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *a, **k: shown.append(a[1]))

@@ -69,6 +69,8 @@ Runtime and I/O:
 - `wiring.py`: draws the wiring diagram from a rig file.
 - `server_copy.py`: copies today's sessions to `<server_directory>/<mouse>/Training/`.
   The server is write-only: never overwrite, rename or delete files there.
+  Behaviour only: imaging/video are copied from the imaging PC with `scripts/copy_recordings.py`
+  (standalone, stdlib, Python 3.8+, does not import pybehaviour; tests in `tests/test_copy_recordings.py`).
 
 GUI (`gui/`): `main_window.py` (large; layout, start/stop, live plots), one window per
 module or calibration (`opto_window.py`, `pdco_window.py`, `calibration_window.py`,
