@@ -192,6 +192,10 @@ session on the server and renames each file after it:
   (several ticked: `<session>_1.tiff`, `_2.tiff`… in the order saved)
 - `*.avi` → `<server>/<mouse>/Recording/Video/<session>/<session>_topview.avi`
   and `_sideview.avi`
+- projection stacks `<imaging>/<mouse>/projection_neurons/<date>/*.tif` →
+  `<server>/<mouse>/Recording/projection_neurons/<session>_projections/`,
+  each keeping its own name (all ticked; those taken before the first session
+  of the day go with it)
 
 Source folders hold `<mouse>/<YYYYMMDD>/` or `<mouse>/<YYMMDD>/`. A file goes
 with the last session that started before it was last saved. The script lists

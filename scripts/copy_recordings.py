@@ -13,16 +13,20 @@ Edit SERVER and SOURCES below once, or give --server / --imaging / --topview / -
 
 What it does:
 1. Checks it can reach the server and each source folder.
-2. Finds the mice that have a day folder (<mouse>/YYYYMMDD or <mouse>/YYMMDD) in a source.
+2. Finds the mice that have a day folder (<mouse>/YYYYMMDD or <mouse>/YYMMDD) in a source,
+   or <mouse>/projection_neurons/<day> in the imaging folder.
 3. Reads their behaviour sessions of that day on the server (<server>/<mouse>/Training/).
 4. A file goes with the last session that started before the file was last saved.
    One file for a session is ticked; several are listed unticked for you to tick.
+   Projection stacks are all ticked; those saved before the first session go with it.
    A file saved in the last minute is never copied (still recording?).
 5. Shows every file in full and where it goes, then asks before copying:
-     imaging  -> <server>/<mouse>/Recording/Imaging/<session>/<session>.tiff
-                 (several ticked: <session>_1.tiff, _2... in the order saved)
-     topview  -> <server>/<mouse>/Recording/Video/<session>/<session>_topview.avi
-     sideview -> <server>/<mouse>/Recording/Video/<session>/<session>_sideview.avi
+     imaging     -> <server>/<mouse>/Recording/Imaging/<session>/<session>.tiff
+                    (several ticked: <session>_1.tiff, _2... in the order saved)
+     projections -> <server>/<mouse>/Recording/projection_neurons/<session>_projections/<same name>
+                    (from <imaging>/<mouse>/projection_neurons/<day>/*.tif)
+     topview     -> <server>/<mouse>/Recording/Video/<session>/<session>_topview.avi
+     sideview    -> <server>/<mouse>/Recording/Video/<session>/<session>_sideview.avi
 6. Copies each file straight under its final name. The server is write-only, so
    nothing there is ever replaced: same size already there = skipped, other size
    = reported and left alone. The originals are not changed or deleted.
@@ -53,7 +57,14 @@ SOURCES = {
 }
 # ------------------------------------------------------------------------------------
 
-EXTENSIONS = {"imaging": (".tif", ".tiff"), "topview": (".avi",), "sideview": (".avi",)}
+PROJECTIONS = "projection_neurons"  # <imaging>/<mouse>/projection_neurons/<date>/*.tif
+# kind: (source in SOURCES, folder between <mouse> and <date>, file extensions), in the order listed
+KINDS = {
+    "imaging": ("imaging", "", (".tif", ".tiff")),
+    "projections": ("imaging", PROJECTIONS, (".tif", ".tiff")),
+    "topview": ("topview", "", (".avi",)),
+    "sideview": ("sideview", "", (".avi",)),
+}
 SETTLE_S = 60  # a file changed more recently than this may still be recording
 CHUNK = 16 * 1024 * 1024
 LOG = Path(__file__).with_name("copy_recordings_log.csv")
@@ -68,11 +79,11 @@ class Session:
 
 @dataclass
 class Item:
-    kind: str  # imaging | topview | sideview
+    kind: str  # imaging | projections | topview | sideview
     source: Path
     size: int
     saved: float  # st_mtime
-    session: Session | None  # None: saved before the first session of the day
+    session: Session | None  # None: saved before the first session of the day (not for projections)
     selected: bool = False
     ready: bool = True  # False: changed less than SETTLE_S ago
 
@@ -96,17 +107,21 @@ def can_read(folder: str | Path) -> bool:
         return False
 
 
-def day_folders(root: Path, mouse: str, day: str) -> list[Path]:
-    """<root>/<mouse>/YYYYMMDD and <root>/<mouse>/YYMMDD, those that exist."""
-    return [f for f in (root / mouse / day, root / mouse / day[2:]) if f.is_dir()]
+def day_folders(root: Path, mouse: str, day: str, sub: str = "") -> list[Path]:
+    """<root>/<mouse>/[sub/]YYYYMMDD and .../YYMMDD, those that exist."""
+    base = root / mouse / sub if sub else root / mouse
+    return [f for f in (base / day, base / day[2:]) if f.is_dir()]
 
 
 def mice_with_data(sources: dict[str, str], day: str) -> list[str]:
     mice = set()
-    for root in sources.values():
+    for key, sub, _ in KINDS.values():
+        root = sources.get(key)
+        if not root:
+            continue
         try:
             for p in Path(root).iterdir():
-                if p.is_dir() and day_folders(Path(root), p.name, day):
+                if p.is_dir() and day_folders(Path(root), p.name, day, sub):
                     mice.add(p.name)
         except OSError:
             pass
@@ -128,18 +143,25 @@ def sessions_on_server(server: Path, mouse: str, day: str) -> list[Session]:
 
 
 def find_items(kind: str, root: Path, mouse: str, day: str, sessions: list[Session], now: float) -> list[Item]:
+    _, sub, exts = KINDS[kind]
     files = []
-    for folder in day_folders(root, mouse, day):
+    for folder in day_folders(root, mouse, day, sub):
         for p in folder.iterdir():
-            if p.is_file() and p.suffix.lower() in EXTENSIONS[kind]:
+            if p.is_file() and p.suffix.lower() in exts:
                 st = p.stat()
                 files.append((p, st.st_size, st.st_mtime))
     files.sort(key=lambda f: (f[2], f[0].name))
     items = []
     for p, size, saved in files:
         started = [s for s in sessions if s.start <= datetime.fromtimestamp(saved)]
-        items.append(Item(kind, p, size, saved, started[-1] if started else None,
-                          ready=now - saved >= SETTLE_S))
+        owner = started[-1] if started else None
+        if owner is None and kind == "projections" and sessions:
+            owner = sessions[0]  # taken before the first session of the day: goes with it
+        items.append(Item(kind, p, size, saved, owner, ready=now - saved >= SETTLE_S))
+    if kind == "projections":  # a set of stacks: all ticked
+        for i in items:
+            i.selected = i.ready and i.session is not None
+        return items
     for s in sessions:  # tick the file when it is the only one of its kind for the session
         mine = [i for i in items if i.session is s]
         if len(mine) == 1 and mine[0].ready:
@@ -162,6 +184,14 @@ def plan(items: list[Item], server: Path) -> tuple[list[tuple[Item, Path]], list
         for k, i in enumerate(tifs, 1):
             name = f"{s.name}.tiff" if len(tifs) == 1 else f"{s.name}_{k}.tiff"
             out.append((i, server / s.mouse / "Recording" / "Imaging" / s.name / name))
+        folder = server / s.mouse / "Recording" / PROJECTIONS / f"{s.name}_projections"
+        names = set()
+        for i in (i for i in ticked if i.session is s and i.kind == "projections"):
+            if i.source.name.lower() in names:
+                errors.append(f"{s.name}: two projection files named {i.source.name}, tick only one")
+                continue
+            names.add(i.source.name.lower())
+            out.append((i, folder / i.source.name))  # keeps its own name
         for kind in ("topview", "sideview"):
             vids = [i for i in ticked if i.session is s and i.kind == kind]
             if len(vids) > 1:
@@ -184,7 +214,7 @@ def show(items: list[Item], server: Path, say=print) -> None:
             say(f"Session {name}" if name else "Not matched (saved before the first session of the day):")
         when = datetime.fromtimestamp(i.saved).strftime("%H:%M")
         box = "[x]" if id(i) in targets else "[ ]"
-        say(f"  {box} {n:>2}  {i.kind:<8} {i.source}  ({size_text(i.size)}, saved {when})")
+        say(f"  {box} {n:>2}  {i.kind:<11} {i.source}  ({size_text(i.size)}, saved {when})")
         if not i.ready:
             say("           changed less than a minute ago (still recording?): not copied")
         elif id(i) in targets:
@@ -371,7 +401,10 @@ def main(argv: list[str] | None = None, ask=input, say=print, now: float | None 
     for mouse in mice:
         sessions = sessions_on_server(server, mouse, day)
         found = []
-        for kind, root in reachable.items():
+        for kind, (key, _, _) in KINDS.items():
+            if key not in reachable:
+                continue
+            root = reachable[key]
             try:
                 found += find_items(kind, Path(root), mouse, day, sessions, now)
             except OSError as exc:
@@ -382,8 +415,9 @@ def main(argv: list[str] | None = None, ask=input, say=print, now: float | None 
             say(f"\n{mouse}: recordings found but no behaviour session of {day} in {server / mouse / 'Training'}."
                 " Copy the behaviour session first.")
             continue
-        items += sorted(found, key=lambda i: (i.session.start if i.session else datetime.min, i.kind != "imaging",
-                                              i.kind, i.saved))
+        order = list(KINDS)
+        items += sorted(found, key=lambda i: (i.session.start if i.session else datetime.min,
+                                              order.index(i.kind), i.saved))
     if not items:
         say("Nothing to copy.")
         return 0

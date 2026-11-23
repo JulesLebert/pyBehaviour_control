@@ -79,6 +79,28 @@ def test_several_tifs_are_listed_unticked_and_numbered_when_ticked(rig, tmp_path
     assert (folder / f"{NAME}_2.tiff").read_bytes() == b"b"
 
 
+def test_projection_stacks_keep_their_names_in_a_session_folder(rig, tmp_path):
+    server, src = rig
+    proj = src["imaging"] / "RD138" / "projection_neurons"
+    put(proj / DAY / "stack_00001.tif", datetime(2026, 11, 21, 9, 30), b"p1")  # before the session: goes with it
+    put(proj / DAY[2:] / "stack_00002.tif", datetime(2026, 11, 21, 12, 0), b"p2")  # YYMMDD too
+    put(src["imaging"] / "RD138" / DAY / "file_00001.tif", datetime(2026, 11, 21, 10, 52), b"tif")
+    code, out = run(server, src, ["", "y"], tmp_path)  # found from projection_neurons alone too
+    assert code == 0, out
+    folder = server / "RD138" / "Recording" / "projection_neurons" / f"{NAME}_projections"
+    assert sorted(p.name for p in folder.iterdir()) == ["stack_00001.tif", "stack_00002.tif"]
+    assert (folder / "stack_00002.tif").read_bytes() == b"p2"
+    assert (server / "RD138" / "Recording" / "Imaging" / NAME / f"{NAME}.tiff").read_bytes() == b"tif"
+    assert out.index("imaging ") < out.index("projections")  # main imaging listed first
+
+
+def test_mouse_found_from_its_projection_folder_only(rig, tmp_path):
+    server, src = rig
+    put(src["imaging"] / "RD138" / "projection_neurons" / DAY / "s.tif", datetime(2026, 11, 21, 12, 0))
+    code, out = run(server, src, [""], tmp_path, extra=["--check"])
+    assert code == 0 and f"{NAME}_projections" in out and "[x]" in out
+
+
 def test_two_side_videos_must_be_narrowed_to_one(rig, tmp_path):
     server, src = rig
     put(src["side"] / "RD138" / DAY / "s1.avi", datetime(2026, 11, 21, 10, 30), b"1")
